@@ -79,6 +79,9 @@ class DialResultEvent(ProviderEvent):
 class CallStatusEvent(ProviderEvent):
     """A provider call-status change (ringing, answered, completed, failed)."""
 
+    #: Declared here so a status event can be built without repeating itself;
+    #: callers pass the real kind (RINGING, ANSWERED, COMPLETED, FAILED).
+    kind: ProviderEventKind = ProviderEventKind.RINGING
     status_text: str = ""
     duration_seconds: Optional[int] = None
     failure_reason: str = ""
