@@ -222,6 +222,9 @@ def is_pure_greeting(text: str) -> bool:
     greeting_words = {
         "hello", "hi", "hey", "hmm", "hm", "haan", "han", "ha", "sir", "madam",
         "హలో", "హాయ్", "హ్మ్", "అండి", "అమ్మా", "నమస్తే", "నమస్కారం", "చెప్పండి",
+        # "సర్"/"సరే" are addresses and acknowledgements, never proof of identity:
+        # "హలో సర్" said during the identity question must not confirm it.
+        "సర్", "సరే", "అయ్యా", "మేడం", "గారు",
     }
     # "చెప్పండి" on its own means "go ahead" - a greeting, not identity proof.
     if words and all(word in greeting_words for word in words):
