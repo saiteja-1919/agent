@@ -381,9 +381,17 @@ class ResponseCache:
         return self.render(self.closing_key(index))
 
 
-def text_checksum(text: str) -> str:
-    """Checksum of spoken text, used to detect a stale cached audio file."""
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+def text_checksum(value) -> str:
+    """Checksum of spoken text or of audio bytes.
+
+    Used two ways: to detect a cached recording whose approved wording changed,
+    and to detect a cached file whose bytes were truncated or corrupted.
+    """
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        payload = bytes(value)
+    else:
+        payload = (value or "").encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def templates_requiring_audio(templates: Optional[Iterable[ResponseTemplate]] = None) -> List[str]:
