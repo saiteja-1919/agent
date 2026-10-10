@@ -34,6 +34,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: Optional[datetime]) -> Optional[datetime]:
+    """Read a database timestamp as aware UTC.
+
+    SQLite returns naive datetimes even for a column that means UTC, while
+    PostgreSQL returns aware ones. Subtracting one from the other raises
+    ``TypeError``, so every duration calculation normalises both sides first.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 # --------------------------------------------------------------------- references
 @dataclass(frozen=True)
 class ProviderCallRef:
@@ -343,6 +357,17 @@ class CallMetrics:
         if not hasattr(self, name) or not isinstance(getattr(self, name), int):
             raise AttributeError(f"{name!r} is not a counter on CallMetrics")
         setattr(self, name, getattr(self, name) + amount)
+
+    def add_characters(self, count: int) -> None:
+        """Accumulate speech characters.
+
+        Separate from :meth:`bump` because this counter legitimately starts
+        unset rather than at zero: an attempt that never spoke has no
+        character count, not a count of nothing.
+        """
+        if count < 0:
+            raise ValueError("a character count cannot be negative")
+        self.tts_characters = (self.tts_characters or 0) + count
 
 
 # ------------------------------------------------------------------------ import

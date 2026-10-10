@@ -37,7 +37,7 @@ from app.domain.enums import (
 )
 from app.domain.events import ProviderEvent
 from app.domain.models import CallAttempt as CallAttemptModel
-from app.domain.models import CallMetrics, CallOutcomeRecord, LatencyTrace, utcnow
+from app.domain.models import CallMetrics, CallOutcomeRecord, LatencyTrace, as_utc, utcnow
 
 from .tables import CallAttempt, CallMetric, CallOutcome, ProviderEventRow, ReminderTask, Student
 
@@ -214,9 +214,9 @@ async def record_lifecycle_state(
         values["answered_at"] = utcnow()
     if state is CallLifecycleState.ENDED:
         values["ended_at"] = utcnow()
-        if attempt.started_at is not None:
-            started = attempt.started_at
-            reference = attempt.answered_at or started
+        started = as_utc(attempt.started_at)
+        if started is not None:
+            reference = as_utc(attempt.answered_at) or started
             values["duration_seconds"] = max(0, int((utcnow() - reference).total_seconds()))
 
     await session.execute(update(CallAttempt).where(CallAttempt.id == attempt_id).values(**values))
