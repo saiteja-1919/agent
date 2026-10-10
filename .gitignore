@@ -1,0 +1,20 @@
+# Secrets - never commit
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Personal call data (parents' names, numbers, speech)
+transcripts/
+name_pronunciations.json
+.pending_calls/
+opener_cache/
+
+# Logs and editors
+*.log
+.idea/
+.vscode/

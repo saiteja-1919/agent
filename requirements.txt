@@ -1,0 +1,10 @@
+# Veda - pinned dependencies (Python 3.12+; developed and checked on 3.13)
+pipecat-ai[runner,websocket,sarvam]==1.12.0
+fastapi
+uvicorn[standard]
+aiohttp
+httpx
+python-dotenv
+sarvamai
+loguru
+websockets>=14
