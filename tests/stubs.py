@@ -18,6 +18,15 @@ import types
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+try:
+    from pipecat.processors.audio.tts_output import TTSSynthesizedFrame as TTSFrame
+
+    def _TTSFrameLike(audio: bytes) -> Frame:
+        return TTSFrame(audio=audio)
+except Exception:
+    def _TTSFrameLike(audio: bytes) -> Frame:
+        return TTSAudioRawFrame(audio=audio)
+
 
 def _module(name: str, **attrs: Any) -> types.ModuleType:
     module = types.ModuleType(name)
@@ -405,10 +414,22 @@ class FakeConnection:
             raise item
         return item
 
+    async def recv(self) -> str:
+        if not self.messages:
+            raise StopAsyncIteration
+        item = self.messages.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
     def json_sent(self) -> List[Any]:
         import json
 
         return [json.loads(payload) for payload in self.sent]
+
+
+
+
 
 
 class Connector:

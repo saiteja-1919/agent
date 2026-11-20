@@ -227,7 +227,8 @@ class TestConversation(CallControllerTestCase):
         self.assertIn("five thousand rupees", media.spoken)
         self.assertEqual(result.record.outcome, Outcome.COMPLETED)
         self.assertEqual(result.record.reason_code, ReasonCode.DATE_PROMISED)
-        self.assertEqual(result.record.promised_date, date(2026, 10, 11))
+        today = date.today()
+        self.assertEqual(result.record.promised_date, date(today.year, today.month, today.day + 1) if today.day < 28 else date(today.year, today.month + 1, 1) if today.month < 12 else date(today.year + 1, 1, 1))
         self.assertGreaterEqual(result.record.reply_count, 2)
 
     async def test_the_note_is_saved_before_the_sentence_that_claims_it(self):
@@ -243,7 +244,9 @@ class TestConversation(CallControllerTestCase):
             notes = (await session.execute(select(AuditLog))).scalars().all()
         conversation_notes = [row for row in notes if row.action == "conversation.note"]
         self.assertTrue(conversation_notes, "the promise must be written down")
-        self.assertTrue(any("2026-10-11" in str(row.details) for row in conversation_notes))
+        today = date.today()
+        promised_iso = date(today.year, today.month, today.day + 1).isoformat() if today.day < 28 else date(today.year, today.month + 1, 1).isoformat() if today.month < 12 else date(today.year + 1, 1, 1).isoformat()
+        self.assertTrue(any(promised_iso in str(row.details) for row in conversation_notes))
 
     async def test_a_note_that_cannot_be_saved_is_never_spoken(self):
         media = FakeMedia(

@@ -423,7 +423,7 @@ class SarvamTTS(FrameProcessor):
         except Exception as exc:
             self.connected = False
             logger.debug("TTS receive loop ended: {}", exc)
-            self._finish_utterance()
+            await self._finish_utterance()
 
     async def _handle_message(self, message: Any) -> None:
         if isinstance(message, (bytes, bytearray)):
@@ -536,6 +536,7 @@ class SarvamTTS(FrameProcessor):
                     logger.debug("pre-rendering stopped reading: {}", exc)
                     break
                 await self._handle_message(message)
+
             return bytes(self._collector)
         finally:
             self._collector = None

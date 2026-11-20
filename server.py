@@ -23,6 +23,7 @@ import sys
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from fastapi import WebSocket
 from loguru import logger
 
 from call_store import claim_pending
@@ -70,6 +71,95 @@ async def _close(websocket: Any, code: int = 1000, reason: str = "") -> None:
         await websocket.close(code=code, reason=reason)
     except Exception as exc:  # pragma: no cover - already closed
         logger.debug("closing the stream failed: {}", exc)
+
+
+def _mask_query(websocket: Any) -> str:
+    """The query string with secrets hidden (for the connection log)."""
+    try:
+        raw = str(websocket.scope.get("query_string", b"").decode("utf-8", "ignore"))
+    except Exception:  # pragma: no cover - defensive (test doubles)
+        return ""
+    parts = []
+    for pair in raw.split("&"):
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            if any(word in key.lower() for word in ("token", "key", "secret", "auth")):
+                parts.append(f"{key}=[{len(value)} chars]")
+            else:
+                parts.append(pair)
+        else:
+            parts.append(pair)
+    return "&".join(parts)
+
+
+def _log_connection(websocket: Any) -> None:
+    """Who is opening this stream. Needed to tell Exotel from a stray client:
+    through cloudflared every connection looks local, so the forwarded headers
+    and the user-agent are the only identity we get."""
+    def header(name: str) -> str:
+        try:
+            return str(websocket.headers.get(name, "") or "")
+        except Exception:  # pragma: no cover - defensive (test doubles)
+            return ""
+
+    client = getattr(websocket, "client", None)
+    peer = f"{getattr(client, 'host', '?')}:{getattr(client, 'port', '?')}" if client else "?"
+    logger.info(
+        "stream connection: peer={} ua={!r} cf-ip={} fwd={!r} host={!r} origin={!r} query={}",
+        peer,
+        header("user-agent") or "-",
+        header("cf-connecting-ip") or "-",
+        header("x-forwarded-for") or "-",
+        header("host") or "-",
+        header("origin") or "-",
+        _mask_query(websocket) or "(none)",
+    )
+
+
+def _watch_frames(websocket: Any) -> None:
+    """Log every WebSocket frame that arrives on this connection.
+
+    The handshake error "closed before receiving telephony handshake messages"
+    only says *nothing* arrived; this wrapper shows whether even one frame was
+    seen, what it contained, and with which close code the peer left - which is
+    the difference between Exotel never sending and the tunnel eating the data.
+    Text previews are rate-limited so a live call does not flood the log.
+    """
+    original = getattr(websocket, "_receive", None)
+    if original is None or getattr(websocket, "_veda_frame_watch", False):
+        return
+    seen = {"count": 0, "text": 0}
+
+    async def _receive() -> Any:
+        message = await original()
+        seen["count"] += 1
+        count = seen["count"]
+        kind = message.get("type", "?")
+        if kind == "websocket.receive":
+            text = message.get("text")
+            if text is not None:
+                seen["text"] += 1
+                if seen["text"] <= 6 or count % 100 == 0:
+                    logger.info(
+                        "frame #{} text ({} chars): {}",
+                        count, len(text), text[:200],
+                    )
+            else:
+                data = message.get("bytes") or b""
+                if count <= 6 or count % 100 == 0:
+                    logger.info("frame #{} binary ({} bytes)", count, len(data))
+        else:
+            logger.info(
+                "stream peer left after {} frame(s) ({} text): type={} code={}",
+                count, seen["text"], kind, message.get("code", "?"),
+            )
+        return message
+
+    try:
+        websocket._receive = _receive
+        websocket._veda_frame_watch = True
+    except Exception:  # pragma: no cover - defensive (test doubles)
+        return
 
 
 def _path_token(websocket: Any) -> str:
@@ -169,11 +259,20 @@ async def handle_stream(
     started = time.time()
     result: Dict[str, Any] = {"status": "unknown", "call_ref": "", "transcript": None, "latency": None}
 
+    _log_connection(websocket)
+    _watch_frames(websocket)
+
     if not token_is_valid(websocket, settings):
-        logger.warning("refused a stream with a bad or missing token")
+        logger.warning(
+            "WebSocket rejected: token mismatch; token configured={}, query token present={}",
+            bool(settings.stream_token),
+            bool(_query(websocket, "token")),
+        )
         await _close(websocket, 4401, "bad token")
         result["status"] = "refused_token"
         return result
+
+    logger.info("WebSocket token validation passed")
     if not sample_rate_is_valid(websocket, settings):
         logger.warning("refused a stream that asked for a sample rate other than {}", SAMPLE_RATE)
         await _close(websocket, 4400, "unsupported sample-rate")
@@ -340,7 +439,14 @@ def create_app(
         # Only what is needed to say "the server is up". No address, no secrets.
         return {"ok": True, "service": "veda", "active_calls": ACTIVE_STREAMS}
 
+    
+    
     async def stream(websocket: WebSocket) -> None:
+        print(
+            f"DEBUG: WebSocket route reached: {websocket.url.path}",
+            flush=True,
+        )
+
         await handle_stream(
             websocket,
             settings=settings,
@@ -348,6 +454,8 @@ def create_app(
             make_pipeline=make_pipeline,
             runner_factory=runner_factory,
         )
+
+
 
     for path in STREAM_PATHS:
         app.add_api_websocket_route(path, stream)
